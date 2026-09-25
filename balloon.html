@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balloon Shooting Game</title>
+    <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Arial', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+#game-container { position: relative; width: 100%; max-width: 800px; height: 600px; }
+#ui { display: flex; justify-content: space-between; padding: 10px 20px; background: rgba(0, 0, 0, 0.3); border-radius: 10px 10px 0 0; color: white; font-size: 18px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); }
+#ui div { min-width: 100px; }
+#powerups { flex-grow: 1; text-align: right; }
+#game-canvas { display: block; background: #87CEEB; border-radius: 0 0 10px 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); }
+.screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; z-index: 10; border-radius: 10px; }
+.screen.hidden { display: none; }
+.screen h1 { font-size: 48px; margin-bottom: 20px; text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5); }
+.screen p { font-size: 24px; margin-bottom: 10px; }
+.screen ul { text-align: left; margin: 20px 0; font-size: 18px; }
+.screen li { margin: 8px 0; }
+button { padding: 15px 40px; font-size: 22px; font-weight: bold; color: white; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 30px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3); }
+button:hover { transform: scale(1.05); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4); }
+button:active { transform: scale(0.98); }
+@media (max-width: 600px) { #game-container { width: 100vw; height: 100vh; max-width: none; } #game-canvas { border-radius: 0; } .screen { border-radius: 0; } #ui { border-radius: 0; font-size: 14px; } .screen h1 { font-size: 36px; } .screen p { font-size: 20px; } }
+@keyframes fadeUp { from { opacity: 1; transform: translate(-50%, -50%); } to { opacity: 0; transform: translate(-50%, -150%); } }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui">
+            <div id="score">Score: 0</div>
+            <div id="level">Level: 1</div>
+            <div id="timer">Time: 60</div>
+            <div id="lives">Lives: 3</div>
+            <div id="powerups">Power-ups: </div>
+        </div>
+        <canvas id="game-canvas"></canvas>
+        <div id="start-screen" class="screen">
+            <h1>Balloon Shooter</h1>
+            <p>Click or tap balloons to pop them!</p>
+            <p>Special balloons give power-ups:</p>
+            <ul>
+                <li>💣 Bomb - Pop all balloons</li>
+                <li>⏱️ Clock - Add time</li>
+                <li>🎯 Target - Double points</li>
+                <li>❤️ Heart - Extra life</li>
+            </ul>
+            <button id="start-btn">Start Game</button>
+        </div>
+        <div id="game-over-screen" class="screen hidden">
+            <h1>Game Over!</h1>
+            <p id="final-score">Final Score: 0</p>
+            <button id="restart-btn">Play Again</button>
+        </div>
+        <div id="level-complete-screen" class="screen hidden">
+            <h1>Level Complete!</h1>
+            <p id="level-score">Score: 0</p>
+            <button id="next-level-btn">Next Level</button>
+        </div>
+    </div>
+    <script>
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const levelCompleteScreen = document.getElementById('level-complete-screen');
+const startBtn = document.getElementById('start-btn');
+const restartBtn = document.getElementById('restart-btn');
+const nextLevelBtn = document.getElementById('next-level-btn');
+
+const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
+const timerEl = document.getElementById('timer');
+const livesEl = document.getElementById('lives');
+const powerupsEl = document.getElementById('powerups');
+const finalScoreEl = document.getElementById('final-score');
+const levelScoreEl = document.getElementById('level-score');
+
+let width, height;
+let balloons = [];
+let particles = [];
+let powerUps = [];
+let score = 0;
+let level = 1;
+let timeLeft = 60;
+let lives = 3;
+let gameRunning = false;
+let animationId = null;
+let doublePointsActive = false;
+let doublePointsTimer = 0;
+let spawnTimer = 0;
+let lastTime = 0;
+
+const BALLOON_COLORS = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+    '#F7DC6F', '#BB8FCE', '#85C1E9', '#F8B500', '#FF69B4'
+];
+
+const SPECIAL_BALLOON_TYPES = {
+    BOMB: { color: '#2C3E50', symbol: '💣', chance: 0.05 },
+    CLOCK: { color: '#E74C3C', symbol: '⏱️', chance: 0.04 },
+    TARGET: { color: '#F39C12', symbol: '🎯', chance: 0.03 },
+    HEART: { color: '#E91E63', symbol: '❤️', chance: 0.02 }
+};
+
+function resizeCanvas() {
+    const container = document.getElementById('game-container');
+    width = container.clientWidth;
+    height = container.clientHeight - 60;
+    canvas.width = width;
+    canvas.height = height;
+}
+
+class Balloon {
+    constructor(x, y, radius, color, speed, isSpecial = false, specialType = null) {
+        this.x = x; this.y = y; this.radius = radius; this.color = color; this.speed = speed;
+        this.isSpecial = isSpecial; this.specialType = specialType;
+        this.wobble = Math.random() * Math.PI * 2;
+        this.wobbleSpeed = 0.02 + Math.random() * 0.03;
+        this.popped = false; this.popAnimation = 0;
+    }
+
+    update() {
+        if (this.popped) { this.popAnimation += 0.15; return this.popAnimation >= 1; }
+        this.y -= this.speed; this.wobble += this.wobbleSpeed; this.x += Math.sin(this.wobble) * 1.5;
+        return this.y + this.radius < 0;
+    }
+
+    draw() {
+        if (this.popped) {
+            const progress = this.popAnimation, r = this.radius * (1 + progress), alpha = 1 - progress;
+            ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = this.color; ctx.fill(); ctx.globalAlpha = 1; return;
+        }
+        ctx.save(); ctx.translate(this.x, this.y);
+        const gradient = ctx.createRadialGradient(-this.radius * 0.3, -this.radius * 0.3, 0, 0, 0, this.radius);
+        gradient.addColorStop(0, this.lightenColor(this.color, 40));
+        gradient.addColorStop(0.5, this.color); gradient.addColorStop(1, this.darkenColor(this.color, 30));
+        ctx.beginPath(); ctx.ellipse(0, 0, this.radius, this.radius * 1.2, 0, 0, Math.PI * 2);
+        ctx.fillStyle = gradient; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.2, this.radius * 0.15, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, this.radius * 1.2); ctx.lineTo(0, this.radius * 1.6);
+        ctx.strokeStyle = this.darkenColor(this.color, 40); ctx.lineWidth = 2; ctx.stroke();
+        if (this.isSpecial && this.specialType) {
+            ctx.font = `${this.radius}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(this.specialType.symbol, 0, this.radius * 0.1);
+        }
+        ctx.restore();
+    }
+
+    lightenColor(color, percent) {
+        const num = parseInt(color.replace('#', ''), 16), amt = Math.round(2.55 * percent);
+        const R = (num >> 16) + amt, G = (num >> 8 & 0x00FF) + amt, B = (num & 0x0000FF) + amt;
+        return '#' + (0x1000000 + (R < 255 ? R : 255) * 0x10000 + (G < 255 ? G : 255) * 0x100 + (B < 255 ? B : 255)).toString(16).slice(1);
+    }
+    darkenColor(color, percent) {
+        const num = parseInt(color.replace('#', ''), 16), amt = Math.round(2.55 * percent);
+        const R = (num >> 16) - amt, G = (num >> 8 & 0x00FF) - amt, B = (num & 0x0000FF) - amt;
+        return '#' + (0x1000000 + (R > 0 ? R : 0) * 0x10000 + (G > 0 ? G : 0) * 0x100 + (B > 0 ? B : 0)).toString(16).slice(1);
+    }
+    containsPoint(px, py) { const dx = px - this.x, dy = py - this.y; return dx * dx + dy * dy <= this.radius * this.radius * 1.44; }
+    pop() { this.popped = true; this.popAnimation = 0; createPopParticles(this.x, this.y, this.color, this.radius); }
+}
+
+class Particle {
+    constructor(x, y, color, velocityX, velocityY, size, life) {
+        this.x = x; this.y = y; this.color = color; this.vx = velocityX; this.vy = velocityY;
+        this.size = size; this.life = life; this.maxLife = life;
+    }
+    update() { this.x += this.vx; this.y += this.vy; this.vy += 0.1; this.vx *= 0.98; this.life--; this.size *= 0.98; return this.life > 0; }
+    draw() { const alpha = this.life / this.maxLife; ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fillStyle = this.color; ctx.fill(); ctx.globalAlpha = 1; }
+}
+
+class PowerUp {
+    constructor(x, y, type) { this.x = x; this.y = y; this.type = type; this.radius = 20; this.collected = false; this.bobOffset = Math.random() * Math.PI * 2; this.rotation = 0; }
+    update() { this.y += 1; this.bobOffset += 0.05; this.x += Math.sin(this.bobOffset) * 0.5; this.rotation += 0.02; return this.y - this.radius < height; }
+    draw() {
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.rotation);
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius);
+        gradient.addColorStop(0, this.type.color); gradient.addColorStop(1, this.darkenColor(this.type.color, 30));
+        ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fillStyle = gradient; ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.font = `${this.radius * 1.2}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this.type.symbol, 0, 2);
+        ctx.restore();
+    }
+    containsPoint(px, py) { const dx = px - this.x, dy = py - this.y; return dx * dx + dy * dy <= this.radius * this.radius; }
+    darkenColor(color, percent) { const num = parseInt(color.replace('#', ''), 16), amt = Math.round(2.55 * percent); const R = (num >> 16) - amt, G = (num >> 8 & 0x00FF) - amt, B = (num & 0x0000FF) - amt; return '#' + (0x1000000 + (R > 0 ? R : 0) * 0x10000 + (G > 0 ? G : 0) * 0x100 + (B > 0 ? B : 0)).toString(16).slice(1); }
+}
+
+function createPopParticles(x, y, color, radius) {
+    const count = 12 + Math.floor(radius / 5);
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5, speed = 2 + Math.random() * 5;
+        particles.push(new Particle(x, y, color, Math.cos(angle) * speed, Math.sin(angle) * speed, 3 + Math.random() * 5, 30 + Math.random() * 20));
+    }
+}
+
+function spawnBalloon() {
+    const radius = 25 + Math.random() * 25 + level * 2;
+    const x = radius + Math.random() * (width - radius * 2), y = height + radius;
+    const baseSpeed = 1.5 + level * 0.3 + Math.random() * 1.5;
+    const color = BALLOON_COLORS[Math.floor(Math.random() * BALLOON_COLORS.length)];
+    let isSpecial = false, specialType = null, rand = Math.random(), cumulative = 0;
+    for (const [key, type] of Object.entries(SPECIAL_BALLOON_TYPES)) {
+        cumulative += type.chance; if (rand < cumulative) { isSpecial = true; specialType = type; break; }
+    }
+    if (isSpecial) balloons.push(new Balloon(x, y, radius, specialType.color, baseSpeed * 0.8, true, specialType));
+    else balloons.push(new Balloon(x, y, radius, color, baseSpeed));
+}
+
+function activatePowerUp(type) {
+    switch (type) {
+        case SPECIAL_BALLOON_TYPES.BOMB:
+            balloons.forEach(b => { if (!b.popped) { b.pop(); score += doublePointsActive ? 20 : 10; } });
+            showPowerUpMessage('BOMB! All balloons popped!'); break;
+        case SPECIAL_BALLOON_TYPES.CLOCK:
+            timeLeft += 10; if (timeLeft > 60 + level * 5) timeLeft = 60 + level * 5; showPowerUpMessage('+10 Seconds!'); break;
+        case SPECIAL_BALLOON_TYPES.TARGET:
+            doublePointsActive = true; doublePointsTimer = 10; showPowerUpMessage('DOUBLE POINTS x2 for 10s!'); break;
+        case SPECIAL_BALLOON_TYPES.HEART:
+            lives = Math.min(5, lives + 1); updateUI(); showPowerUpMessage('Extra Life!'); break;
+    }
+}
+
+function showPowerUpMessage(msg) {
+    const msgEl = document.createElement('div');
+    msgEl.textContent = msg; msgEl.style.cssText = `position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 28px; font-weight: bold; text-shadow: 2px 2px 4px black; pointer-events: none; z-index: 20; animation: fadeUp 1.5s forwards;`;
+    document.getElementById('game-container').appendChild(msgEl); setTimeout(() => msgEl.remove(), 1500);
+}
+
+function updateUI() {
+    scoreEl.textContent = `Score: ${score}`; levelEl.textContent = `Level: ${level}`;
+    timerEl.textContent = `Time: ${Math.ceil(timeLeft)}`; livesEl.textContent = `Lives: ${'❤️'.repeat(lives)}`;
+    const active = []; if (doublePointsActive) active.push('🎯 x2'); powerupsEl.textContent = `Power-ups: ${active.join(' ')}`;
+}
+
+function gameLoop(timestamp) {
+    if (!gameRunning) return;
+    const deltaTime = (timestamp - lastTime) / 1000; lastTime = timestamp;
+    ctx.clearRect(0, 0, width, height); drawBackground();
+    timeLeft -= deltaTime; if (timeLeft <= 0) { endGame(); return; }
+    if (doublePointsActive) { doublePointsTimer -= deltaTime; if (doublePointsTimer <= 0) doublePointsActive = false; }
+    const spawnRate = Math.max(0.5, 1.5 - level * 0.1); spawnTimer += deltaTime;
+    if (spawnTimer >= spawnRate) { const count = 1 + Math.floor(level / 3); for (let i = 0; i < count; i++) setTimeout(() => spawnBalloon(), i * 200); spawnTimer = 0; }
+    balloons = balloons.filter(b => { const escaped = b.update(); b.draw(); if (escaped && !b.popped) { lives--; updateUI(); if (lives <= 0) endGame(); return false; } return !b.popped || b.popAnimation < 1; });
+    particles = particles.filter(p => { const alive = p.update(); p.draw(); return alive; });
+    powerUps = powerUps.filter(p => { const alive = p.update(); p.draw(); return alive && !p.collected; });
+    updateUI(); animationId = requestAnimationFrame(gameLoop);
+}
+
+function drawBackground() {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, '#87CEEB'); gradient.addColorStop(0.5, '#98D8E8'); gradient.addColorStop(1, '#B0E0E6');
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    for (let i = 0; i < 20; i++) {
+        const x = (i * 47 + timestamp * 0.01) % (width + 100) - 50, y = (i * 31 + timestamp * 0.005) % (height + 100) - 50;
+        ctx.beginPath(); ctx.arc(x, y, 2 + Math.sin(timestamp * 0.001 + i) * 2, 0, Math.PI * 2); ctx.fill();
+    }
+}
+
+function handleClick(e) {
+    if (!gameRunning) return;
+    const rect = canvas.getBoundingClientRect(); const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    for (let i = balloons.length - 1; i >= 0; i--) {
+        const b = balloons[i]; if (!b.popped && b.containsPoint(x, y)) {
+            b.pop(); let points = Math.max(10, Math.floor(50 - b.radius));
+            if (b.isSpecial) { points *= 3; activatePowerUp(b.specialType); }
+            if (doublePointsActive) points *= 2; score += points; updateUI();
+            if (checkLevelComplete()) levelComplete(); return;
+        }
+    }
+    for (let i = powerUps.length - 1; i >= 0; i--) {
+        const p = powerUps[i]; if (p.containsPoint(x, y)) { p.collected = true; activatePowerUp(p.type); createPopParticles(p.x, p.y, p.type.color, 20); return; }
+    }
+}
+
+function checkLevelComplete() { return balloons.length === 0 && timeLeft > 0; }
+
+function levelComplete() { gameRunning = false; cancelAnimationFrame(animationId); const bonus = Math.floor(timeLeft * 10) + lives * 100; score += bonus; levelScoreEl.textContent = `Score: ${score} (Bonus: +${bonus})`; levelCompleteScreen.classList.remove('hidden'); }
+
+function nextLevel() { level++; timeLeft = 60 + level * 5; balloons = []; particles = []; powerUps = []; spawnTimer = 0; doublePointsActive = false; doublePointsTimer = 0; levelCompleteScreen.classList.add('hidden'); startGame(); }
+
+function startGame() { score = 0; level = 1; timeLeft = 60; lives = 3; balloons = []; particles = []; powerUps = []; spawnTimer = 0; doublePointsActive = false; doublePointsTimer = 0; gameRunning = true; startScreen.classList.add('hidden'); gameOverScreen.classList.add('hidden'); levelCompleteScreen.classList.add('hidden'); updateUI(); lastTime = performance.now(); animationId = requestAnimationFrame(gameLoop); }
+
+function endGame() { gameRunning = false; cancelAnimationFrame(animationId); finalScoreEl.textContent = `Final Score: ${score}`; gameOverScreen.classList.remove('hidden'); }
+
+function init() { resizeCanvas(); window.addEventListener('resize', resizeCanvas); canvas.addEventListener('click', handleClick); canvas.addEventListener('touchstart', (e) => { e.preventDefault(); if (e.touches.length > 0) handleClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY }); }, { passive: false }); startBtn.addEventListener('click', startGame); restartBtn.addEventListener('click', startGame); nextLevelBtn.addEventListener('click', nextLevel); }
+
+init();
+    </script>
+</body>
+</html>
