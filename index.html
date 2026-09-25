@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balloon Shooting Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui">
+            <div id="score">Score: 0</div>
+            <div id="level">Level: 1</div>
+            <div id="timer">Time: 60</div>
+            <div id="lives">Lives: 3</div>
+            <div id="powerups">Power-ups: </div>
+        </div>
+        <canvas id="game-canvas"></canvas>
+        <div id="start-screen" class="screen">
+            <h1>Balloon Shooter</h1>
+            <p>Click or tap balloons to pop them!</p>
+            <p>Special balloons give power-ups:</p>
+            <ul>
+                <li>💣 Bomb - Pop all balloons</li>
+                <li>⏱️ Clock - Add time</li>
+                <li>🎯 Target - Double points</li>
+                <li>❤️ Heart - Extra life</li>
+            </ul>
+            <button id="start-btn">Start Game</button>
+        </div>
+        <div id="game-over-screen" class="screen hidden">
+            <h1>Game Over!</h1>
+            <p id="final-score">Final Score: 0</p>
+            <button id="restart-btn">Play Again</button>
+        </div>
+        <div id="level-complete-screen" class="screen hidden">
+            <h1>Level Complete!</h1>
+            <p id="level-score">Score: 0</p>
+            <button id="next-level-btn">Next Level</button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
